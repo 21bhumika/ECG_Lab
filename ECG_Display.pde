@@ -2,12 +2,22 @@
 BME/CS 479 Group 7 - Lab 2 (ECG) - Dominic, Atulya, Luka, Bhumika
 ******************************************************************************/
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 // ----- CONSTS ------
 String[] screens = {"Input + Wait", "Main Page", "Fitness Mode", "Stress Mode - Menu", "Stress Mode - Elevating", "Stress Mode - Calming", "Stress Mode - Result", "Meditate Mode - Menu", "Meditate Mode - Game", "Meditate Mode - Result", "History"};
-int currentScreen = 1;
+int currentScreen = 2;
+int[] fitnessZoneTimes = {0, 0, 0, 0, 0, 0}; // No, VL, L, M, H, VH Zones
+List<Integer> bpms = new ArrayList<>(Arrays.asList());
+List<Integer> rpms = new ArrayList<>(Arrays.asList());
+int bpmSum = 0, rpmSum = 0, sampleCount = 0;
+int lastSecondMs = 0;
 
 int screenWidth = 800, screenHeight = 800;
-int gridOffset = 0;
+int gridOffset = 0; // scrolling grid
+int historyTimeframe = 30; // how many s the graph will check back to
 
 PFont headerFont;
 PFont mainFont;
@@ -19,6 +29,10 @@ color lightGray = color(236, 236, 236);
 color purple = color(176, 38, 240);
 color darkPurple = color(110, 20, 150);
 color red = color(232, 54, 95);
+color orange = color(249,108,8);
+color yellow = color(249,201,8);
+color green = color(57, 230, 13);
+color blue = color(8, 185, 249);
 
 int time = 0;
 
@@ -28,8 +42,9 @@ int backX1 = 30, backY1 = 10, backX2 = 140, backY2 = 50;
 boolean navBackActive = false;
 int navBackTarget = 0;
 
-// screen 1
+// screen 0
 String ageText = "";
+int age = 21;
 boolean ageFocused = false;
 int ageBoxW = 145, ageBoxH = 55;
 int ageBoxX = screenWidth/2 + 20, ageBoxY = screenHeight/2 - ageBoxH/2;
@@ -38,14 +53,18 @@ int continueBoxW = 340, continueBoxH = 52;
 int continueBoxX = screenWidth/2 - continueBoxW/2, continueBoxY = 620;
 int waitSeconds = 30;
 
-// screen 2
+// screen 1
 // main menu buttons
 String[] menuLabels = {"Fitness", "Stress", "Meditate", "History"};
 color[] menuColors = {color(239, 188, 116), color(172, 244, 118),
                       color(130, 206, 242), color(176, 108, 238)};
-int[] menuTargets = {3, 4, 8, 10};
+int[] menuTargets = {2, 4, 8, 10};
 int menuX1 = 437, menuX2 = 760;
 int menuY = 228, menuH = 84, menuGap = 22;
+
+// screen 2
+int graphMode = 0; // 0 = HR, 1 = RR
+
 
 void settings() {
     size(screenWidth, screenHeight);  
@@ -60,6 +79,22 @@ void setup () {
 }
 
 
+
+// sample average over second
+void collectSample(int bpm, int rpm) {
+  bpmSum += bpm;
+  rpmSum += rpm;
+  sampleCount++;
+
+  if (millis() - lastSecondMs >= 1000) {
+    bpms.add(round(bpmSum / float(sampleCount)));
+    rpms.add(round(rpmSum / float(sampleCount)));
+    bpmSum = 0;
+    rpmSum = 0;
+    sampleCount = 0;
+    lastSecondMs = millis();
+  }
+}
 
 // draw box style
 void drawBox(float x1, float y1, float x2, float y2, color c, String label, float fontSize) {
@@ -210,6 +245,7 @@ void drawMainMenu() {
 }
 
 
+
 void keyPressed() {
   if (currentScreen == 0) {
     if (!ageFocused) return;
@@ -221,18 +257,17 @@ void keyPressed() {
       ageText += key;  // digits only, max 3 characters
     }
   }
-  
 }
 
 
 
 void mousePressed() {
-    if (navBackActive && mouseX > backX1 && mouseX < backX2 &&
+  if (navBackActive && mouseX > backX1 && mouseX < backX2 &&
       mouseY > backY1 && mouseY < backY2) {
     currentScreen = navBackTarget;
     return;
   }
-  
+
   if (currentScreen == 0) {
     ageFocused = mouseX > ageBoxX && mouseX < ageBoxX + ageBoxW &&
                  mouseY > ageBoxY && mouseY < ageBoxY + ageBoxH;
@@ -242,6 +277,15 @@ void mousePressed() {
 
     if (onContinue && canContinue()) {
       currentScreen = 1;
+      age = Integer.parseInt(ageText);
+    }
+  }
+  else if (currentScreen == 1) {
+    for (int i = 0; i < menuLabels.length; i++) {
+      float y = menuY + i * (menuH + menuGap);
+      if (mouseX > menuX1 && mouseX < menuX2 && mouseY > y && mouseY < y + menuH) {
+        currentScreen = menuTargets[i];
+      }
     }
   }
 }
@@ -278,12 +322,13 @@ void draw () {
      fill(0);
      background(255);
      
-     int bpm = int(random(0, 101));
-     int resp = int(random(0, 101));
-     int spo2 = int(random(0, 101));
+     collectSample(int(random(0, 301)), int(random(0, 41)));
+     int bpm = bpms.isEmpty() ? 0 : bpms.get(bpms.size() - 1);
+     int rpm = rpms.isEmpty() ? 0 : rpms.get(rpms.size() - 1);
      drawGrid();
      
      switch(currentScreen) {
+       // input
        case 0:
          // title
          textFont(headerFont);
@@ -299,9 +344,10 @@ void draw () {
          drawAgeBox();
          drawConfirmationBox();
          break;
-
+  
+       // main
        case 1:
-         drawTopBar(0, "Fitness Mode", clockTime(), true, true, true);
+         drawTopBar(0, "", clockTime(), false, false, true);
          fill(black);
          textFont(headerFont);
          textSize(60);
@@ -311,5 +357,53 @@ void draw () {
          drawMainMenu();
          break;
          
+       // fitness mode
+       case 2:
+         drawTopBar(1, "Fitness Mode", clockTime(), true, true, true);
+         
+         
+         float fitnessStrain = bpm / float(220 - age);
+         String fitnessZoneText = "NO EFFORT";
+         color zoneColor = gray;
+         if (fitnessStrain > 0.9) { fitnessZoneText = "VERY HARD"; zoneColor = red; }
+         else if (fitnessStrain > 0.8) { fitnessZoneText = "HARD"; zoneColor = orange; }
+         else if (fitnessStrain > 0.7) { fitnessZoneText = "MODERATE"; zoneColor = yellow; }
+         else if (fitnessStrain > 0.6) { fitnessZoneText = "LIGHT"; zoneColor = green; } 
+         else if (fitnessStrain > 0.5) { fitnessZoneText = "VERY LIGHT"; zoneColor = blue; }
+         
+         // Left Side
+         drawBox(width/2 - 300, height/2 - 275, width/2 - 100, height/2 - 200, zoneColor, fitnessZoneText, 32);
+         textFont(mainFont);
+         textSize(25);
+         textAlign(LEFT, CENTER);
+         fill(red);
+         text("VERY HARD", width/8 + 20, height - 500);
+         fill(black);
+         text(fitnessZoneTimes[5], width/8 + 150, height - 500);
+         fill(orange);
+         text("HARD", width/8 + 20, height - 460);
+         fill(black);
+         text(fitnessZoneTimes[4], width/8 + 150, height - 460);
+         fill(yellow);
+         text("MODERATE", width/8 + 20, height - 420);
+         fill(black);
+         text(fitnessZoneTimes[3], width/8 + 150, height - 420);
+         fill(green);
+         text("LIGHT", width/8 + 20, height - 380);
+         fill(black);
+         text(fitnessZoneTimes[2], width/8 + 150, height - 380);
+         fill(blue);
+         text("VERY LIGHT", width/8 + 20, height - 340);
+         fill(black);
+         text(fitnessZoneTimes[2], width/8 + 150, height - 340);
+         fill(gray);
+         text("NO EFFORT", width/8 + 20, height - 300);
+         fill(black);
+         text(fitnessZoneTimes[2], width/8 + 150, height - 300);
+         
+         drawBox(width/2 - 325, height/2 + 200, width/2 - 200, height/2 + 250, gray, Integer.toString(bpm) + " BPM", 20);
+         drawBox(width/2 - 175, height/2 + 200, width/2 - 50, height/2 + 250, gray, Integer.toString(rpm) + " RPM", 20);
+         drawBox(width/2 - 325, height/2 + 275, width/2 - 200, height/2 + 325, gray, "Beat Interval", 20);
+         drawBox(width/2 - 175, height/2 + 275, width/2 - 50, height/2 + 325, gray, "SpO2", 20);
      }
 }
