@@ -20,8 +20,8 @@ Map<String, List<Float>> series = new HashMap<>();
 
 // ----- CONSTS ------
 String[] screens = {"Input + Wait", "Main Page", "Fitness Mode", "Stress Mode - Menu", "Stress Mode - Elevating", "Stress Mode - Calming", "Stress Mode - Result", "Meditate Mode - Menu", "Meditate Mode - Game", "Meditate Mode - Result", "History"};
-int currentScreen = 2;
-color[] zoneColors = new color[6]; // set in setup, same order as fitnessZoneTimes
+int currentScreen = 3;
+color[] zoneColors = new color[6];
 float[] fitnessZoneTimes = {0, 0, 0, 0, 0, 0}; // seconds in No, VL, L, M, H, VH Zones
 int lastFrameMs = 0;
 
@@ -68,9 +68,14 @@ int waitSeconds = 30;
 String[] menuLabels = {"Fitness", "Stress", "Meditate", "History"};
 color[] menuColors = {color(239, 188, 116), color(172, 244, 118),
                       color(130, 206, 242), color(176, 108, 238)};
-int[] menuTargets = {2, 4, 8, 10};
+int[] menuTargets = {2, 3, 8, 10};
 int menuX1 = 437, menuX2 = 760;
 int menuY = 228, menuH = 84, menuGap = 22;
+
+// screen 3
+int stressBoxW = 250, stressBoxH = 130;
+int stressBoxX = screenWidth/2 - stressBoxW/2;
+int calmBoxY = 350, elevateBoxY = 520;
 
 // screen 2
 int graphMode = 0; // 0 = HR, 1 = RR
@@ -245,7 +250,7 @@ String clockTime() {
 
 
 
-// ----- screen 1 -----
+// ----- screen 0 -----
 void drawAgeBox() {
   // box (thicker border when selected)
   stroke(black);
@@ -297,7 +302,7 @@ void drawConfirmationBox() {
 
 
 
-// ------ screen 2 ------
+// ------ screen 1 ------
 void drawMainMenu() {
   for (int i = 0; i < menuLabels.length; i++) {
     float y = menuY + i * (menuH + menuGap);
@@ -353,6 +358,7 @@ void drawFitnessGraph(String field, String unit, float minVal, float maxVal, flo
 }
 
 
+
 void keyPressed() {
   if (currentScreen == 0) {
     if (!ageFocused) return;
@@ -393,6 +399,12 @@ void mousePressed() {
       if (mouseX > menuX1 && mouseX < menuX2 && mouseY > y && mouseY < y + menuH) {
         currentScreen = menuTargets[i];
       }
+    }
+  }
+  else if (currentScreen == 3) {
+    if (mouseX > stressBoxX && mouseX < stressBoxX + stressBoxW) {
+      if (mouseY > calmBoxY && mouseY < calmBoxY + stressBoxH) currentScreen = 5;
+      else if (mouseY > elevateBoxY && mouseY < elevateBoxY + stressBoxH) currentScreen = 4;
     }
   }
 }
@@ -525,6 +537,25 @@ void draw () {
          rect(width/2 - 1, 430, width-2, 2);
          drawFitnessGraph("heartRate", "BPM", 0, 220, 40, 80, 420);
          drawFitnessGraph("respRate", "RPM", 0, 45, 10, 450, 780);
+         break;
+     
+      // stress mode menu
+      case 3:
+         drawTopBar(1, "Stress Mode", clockTime(), true, true, true);
+         fill(black);
+         textFont(headerFont);
+         textSize(55);
+         textAlign(CENTER, CENTER);
+         text("Test your stress! Select", width/2, 170);
+         text("a mode:", width/2, 250);
+         textFont(mainFont);
+         textSize(20);
+         fill(gray);
+         text("Activity takes ~30 seconds", width/2, 750);
+
+         drawBox(stressBoxX, calmBoxY, stressBoxX + stressBoxW, calmBoxY + stressBoxH, blue, "Calming", 40);
+         drawBox(stressBoxX, elevateBoxY, stressBoxX + stressBoxW, elevateBoxY + stressBoxH, orange, "Elevating", 40);
+         break;
      }
      lastFrameMs = millis();
 }
