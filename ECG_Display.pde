@@ -14,13 +14,14 @@ import processing.serial.*;
 String[] dataFields = {"time", "ecgRaw", "ecgFiltered", "fsrRaw", "fsrFiltered",
                        "heartRate", "respRate", "inhaleTime", "exhaleTime"};
 int serialPortIndex = 0; // index into Serial.list(), check the console output
-int maxSeriesLength = 1000; // 10 s at 100 samples/s
+int maxSeriesLength = 3000; // 30 s at 100 samples/s
 Serial port;
 Map<String, List<Float>> series = new HashMap<>();
 
 // ----- CONSTS ------
 String[] screens = {"Input + Wait", "Main Page", "Fitness Mode", "Stress Mode - Menu", "Stress Mode - Elevating", "Stress Mode - Calming", "Stress Mode - Result", "Meditate Mode - Menu", "Meditate Mode - Game", "Meditate Mode - Result", "History"};
 int currentScreen = 2;
+color[] zoneColors = new color[6]; // set in setup, same order as fitnessZoneTimes
 float[] fitnessZoneTimes = {0, 0, 0, 0, 0, 0}; // seconds in No, VL, L, M, H, VH Zones
 int lastFrameMs = 0;
 
@@ -81,6 +82,7 @@ void settings() {
 
 void setup () {
   frameRate(10);
+  zoneColors = new color[] {gray, blue, green, yellow, orange, red};
 
   for (String f : dataFields) series.put(f, new ArrayList<Float>());
   String[] ports = Serial.list();
@@ -303,14 +305,52 @@ void drawMainMenu() {
   }
 }
 
-/**
-void drawFitnessGraph(List<Integer> values) {
-  for (int i = 0; i < historyTimeframe; i++) {
-    color lineColor;
-    switch
+// zone 0-5 (No Effort .. Very Hard) for a heart rate
+int zoneOf(float bpm) {
+  float strain = bpm / float(220 - age);
+  if (strain > 0.9) return 5;
+  if (strain > 0.8) return 4;
+  if (strain > 0.7) return 3;
+  if (strain > 0.6) return 2;
+  if (strain > 0.5) return 1;
+  return 0;
+}
+
+void drawFitnessGraph(String field, String unit, float minVal, float maxVal, float step, float yTop, float yBottom) {
+  float x1 = width/2, x2 = width;
+
+  // y axis
+  textFont(mainFont);
+  textSize(20);
+  textAlign(LEFT, BOTTOM);
+  for (float v = minVal; v <= maxVal; v += step) {
+    float y = map(v, minVal, maxVal, yBottom, yTop);
+    stroke(gray);
+    strokeWeight(2);
+    line(x1, y, x2, y);
+    fill(gray);
+    text(round(v) + " " + unit, x1 + 6, y - 4);
+  }
+
+  List<Float> values = series.get(field);
+  List<Float> hrs = series.get("heartRate");
+  if (values.size() < 2) return;
+
+  List<Float> times = series.get("time");
+  float windowMs = historyTimeframe * 1000.0;
+  float windowStart = max(times.get(0), times.get(times.size() - 1) - windowMs);
+
+  strokeWeight(2);
+  for (int i = 1; i < values.size(); i++) {
+    if (times.get(i - 1) < windowStart) continue;
+    float xa = map(times.get(i - 1), windowStart, windowStart + windowMs, x1, x2);
+    float xb = map(times.get(i), windowStart, windowStart + windowMs, x1, x2);
+    float ya = map(values.get(i - 1), minVal, maxVal, yBottom, yTop);
+    float yb = map(values.get(i), minVal, maxVal, yBottom, yTop);
+    stroke(zoneColors[zoneOf(hrs.get(i))]);
+    line(xa, ya, xb, yb);
   }
 }
-*/
 
 
 void keyPressed() {
@@ -482,7 +522,9 @@ void draw () {
          rect(width/2, 60, width/2, height-60);
          fill(0);
          rect(width/2 - 1, 60, 2, height-60);
-
+         rect(width/2 - 1, 430, width-2, 2);
+         drawFitnessGraph("heartRate", "BPM", 0, 220, 40, 80, 420);
+         drawFitnessGraph("respRate", "RPM", 0, 45, 10, 450, 780);
      }
      lastFrameMs = millis();
 }
