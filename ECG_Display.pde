@@ -21,11 +21,8 @@ Map<String, List<Float>> series = new HashMap<>();
 // ----- CONSTS ------
 String[] screens = {"Input + Wait", "Main Page", "Fitness Mode", "Stress Mode - Menu", "Stress Mode - Elevating", "Stress Mode - Calming", "Stress Mode - Result", "Meditate Mode - Menu", "Meditate Mode - Game", "Meditate Mode - Result", "History"};
 int currentScreen = 2;
-int[] fitnessZoneTimes = {0, 0, 0, 0, 0, 0}; // No, VL, L, M, H, VH Zones
-List<Integer> bpms = new ArrayList<>(Arrays.asList());
-List<Integer> rpms = new ArrayList<>(Arrays.asList());
-int bpmSum = 0, rpmSum = 0, sampleCount = 0;
-int lastSecondMs = 0;
+float[] fitnessZoneTimes = {0, 0, 0, 0, 0, 0}; // seconds in No, VL, L, M, H, VH Zones
+int lastFrameMs = 0;
 
 int screenWidth = 800, screenHeight = 800;
 int gridOffset = 0; // scrolling grid
@@ -131,25 +128,31 @@ void parseLine(String line) {
   }
 }
 
+// TEMP
+int fakeTimeMs = 0;
+void fakeSerialData() {
+  for (int i = 0; i < 10; i++) {
+    fakeTimeMs += 10;
+    float hr = 110 + 50 * sin(fakeTimeMs / 20000.0 * TWO_PI);
+    float rr = 18 + 6 * sin(fakeTimeMs / 30000.0 * TWO_PI);
+
+    float beatPeriod = 60000.0 / hr;
+    float phase = (fakeTimeMs % (int) beatPeriod) / beatPeriod;
+    float ecgFiltered = 120 * exp(-sq((phase - 0.1) / 0.015)) + random(-4, 4);
+    float ecgRaw = 512 + ecgFiltered;
+
+    float fsrFiltered = 60 * sin(fakeTimeMs / (60000.0 / rr) * TWO_PI);
+    float fsrRaw = 500 + fsrFiltered + random(-3, 3);
+
+    parseLine("DATA," + fakeTimeMs + "," + round(ecgRaw) + "," + nf(ecgFiltered, 0, 2) + ","
+              + round(fsrRaw) + "," + nf(fsrFiltered, 0, 2) + "," + nf(hr, 0, 1) + ","
+              + nf(rr, 0, 1) + ",1.80,2.40");
+  }
+}
+
 float latest(String field) {
   List<Float> list = series.get(field);
   return list.isEmpty() ? 0 : list.get(list.size() - 1);
-}
-
-// sample average over second
-void collectSample(int bpm, int rpm) {
-  bpmSum += bpm;
-  rpmSum += rpm;
-  sampleCount++;
-
-  if (millis() - lastSecondMs >= 1000) {
-    bpms.add(round(bpmSum / float(sampleCount)));
-    rpms.add(round(rpmSum / float(sampleCount)));
-    bpmSum = 0;
-    rpmSum = 0;
-    sampleCount = 0;
-    lastSecondMs = millis();
-  }
 }
 
 // draw box style
@@ -300,13 +303,14 @@ void drawMainMenu() {
   }
 }
 
+/**
 void drawFitnessGraph(List<Integer> values) {
   for (int i = 0; i < historyTimeframe; i++) {
     color lineColor;
     switch
   }
 }
-
+*/
 
 
 void keyPressed() {
@@ -385,14 +389,11 @@ void draw () {
      fill(0);
      background(255);
      
-     readSerial();
-     if (port != null) {
-       collectSample(round(latest("heartRate")), round(latest("respRate")));
-     } else {
-       collectSample(int(random(0, 301)), int(random(0, 41)));
-     }
-     int bpm = bpms.isEmpty() ? 0 : bpms.get(bpms.size() - 1);
-     int rpm = rpms.isEmpty() ? 0 : rpms.get(rpms.size() - 1);
+     // if (port != null) readSerial();
+     fakeSerialData(); // TEMP
+     int bpm = round(latest("heartRate"));
+     int rpm = round(latest("respRate"));
+     
      drawGrid();
      
      switch(currentScreen) {
@@ -433,11 +434,13 @@ void draw () {
          float fitnessStrain = bpm / float(220 - age);
          String fitnessZoneText = "NO EFFORT";
          color zoneColor = gray;
-         if (fitnessStrain > 0.9) { fitnessZoneText = "VERY HARD"; zoneColor = red; }
-         else if (fitnessStrain > 0.8) { fitnessZoneText = "HARD"; zoneColor = orange; }
-         else if (fitnessStrain > 0.7) { fitnessZoneText = "MODERATE"; zoneColor = yellow; }
-         else if (fitnessStrain > 0.6) { fitnessZoneText = "LIGHT"; zoneColor = green; } 
-         else if (fitnessStrain > 0.5) { fitnessZoneText = "VERY LIGHT"; zoneColor = blue; }
+         int fitnessZone = 0;
+         if (fitnessStrain > 0.9) { fitnessZoneText = "VERY HARD"; zoneColor = red; fitnessZone = 5; }
+         else if (fitnessStrain > 0.8) { fitnessZoneText = "HARD"; zoneColor = orange; fitnessZone = 4; }
+         else if (fitnessStrain > 0.7) { fitnessZoneText = "MODERATE"; zoneColor = yellow; fitnessZone = 3; }
+         else if (fitnessStrain > 0.6) { fitnessZoneText = "LIGHT"; zoneColor = green; fitnessZone = 2; }
+         else if (fitnessStrain > 0.5) { fitnessZoneText = "VERY LIGHT"; zoneColor = blue; fitnessZone = 1; }
+         fitnessZoneTimes[fitnessZone] += (millis() - lastFrameMs) / 1000.0;
          
          // Left Side
          drawBox(width/2 - 300, height/2 - 275, width/2 - 100, height/2 - 200, zoneColor, fitnessZoneText, 32);
@@ -447,27 +450,27 @@ void draw () {
          fill(red);
          text("VERY HARD", width/8 + 20, height - 500);
          fill(black);
-         text(fitnessZoneTimes[5], width/8 + 150, height - 500);
+         text(round(fitnessZoneTimes[5]) + "s", width/8 + 150, height - 500);
          fill(orange);
          text("HARD", width/8 + 20, height - 460);
          fill(black);
-         text(fitnessZoneTimes[4], width/8 + 150, height - 460);
+         text(round(fitnessZoneTimes[4]) + "s", width/8 + 150, height - 460);
          fill(yellow);
          text("MODERATE", width/8 + 20, height - 420);
          fill(black);
-         text(fitnessZoneTimes[3], width/8 + 150, height - 420);
+         text(round(fitnessZoneTimes[3]) + "s", width/8 + 150, height - 420);
          fill(green);
          text("LIGHT", width/8 + 20, height - 380);
          fill(black);
-         text(fitnessZoneTimes[2], width/8 + 150, height - 380);
+         text(round(fitnessZoneTimes[2]) + "s", width/8 + 150, height - 380);
          fill(blue);
          text("VERY LIGHT", width/8 + 20, height - 340);
          fill(black);
-         text(fitnessZoneTimes[2], width/8 + 150, height - 340);
+         text(round(fitnessZoneTimes[1]) + "s", width/8 + 150, height - 340);
          fill(gray);
          text("NO EFFORT", width/8 + 20, height - 300);
          fill(black);
-         text(fitnessZoneTimes[2], width/8 + 150, height - 300);
+         text(round(fitnessZoneTimes[0]) + "s", width/8 + 150, height - 300);
          
          drawBox(width/2 - 325, height/2 + 200, width/2 - 200, height/2 + 250, gray, Integer.toString(bpm) + " BPM", 20);
          drawBox(width/2 - 175, height/2 + 200, width/2 - 50, height/2 + 250, gray, Integer.toString(rpm) + " RPM", 20);
@@ -479,6 +482,7 @@ void draw () {
          rect(width/2, 60, width/2, height-60);
          fill(0);
          rect(width/2 - 1, 60, 2, height-60);
-         
+
      }
+     lastFrameMs = millis();
 }
