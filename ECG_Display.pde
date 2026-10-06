@@ -5,6 +5,18 @@ BME/CS 479 Group 7 - Lab 2 (ECG) - Dominic, Atulya, Luka, Bhumika
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import processing.serial.*;
+
+// ----- SERIAL ------
+// DATA,time,ecgRaw,ecgFiltered,fsrRaw,fsrFiltered,heartRate,respRate,inhaleTime,exhaleTime
+String[] dataFields = {"time", "ecgRaw", "ecgFiltered", "fsrRaw", "fsrFiltered",
+                       "heartRate", "respRate", "inhaleTime", "exhaleTime"};
+int serialPortIndex = 0; // index into Serial.list(), check the console output
+int maxSeriesLength = 1000; // 10 s at 100 samples/s
+Serial port;
+Map<String, List<Float>> series = new HashMap<>();
 
 // ----- CONSTS ------
 String[] screens = {"Input + Wait", "Main Page", "Fitness Mode", "Stress Mode - Menu", "Stress Mode - Elevating", "Stress Mode - Calming", "Stress Mode - Result", "Meditate Mode - Menu", "Meditate Mode - Game", "Meditate Mode - Result", "History"};
@@ -72,13 +84,57 @@ void settings() {
 
 void setup () {
   frameRate(10);
-  
+
+  for (String f : dataFields) series.put(f, new ArrayList<Float>());
+  String[] ports = Serial.list();
+  printArray(ports);
+  if (serialPortIndex < ports.length) {
+    port = new Serial(this, ports[serialPortIndex], 115200);
+    port.clear();
+  }
+
   // fonts
   headerFont = createFont("AveriaSerifLibre-Regular.ttf", 32);
   mainFont  = createFont("ShareTech-Regular.ttf", 20);
 }
 
 
+
+// read every complete line waiting on the port
+void readSerial() {
+  if (port == null) return;
+  while (port.available() > 0) {
+    String line = port.readStringUntil('\n');
+    if (line == null) return;
+    parseLine(trim(line));
+  }
+}
+
+void parseLine(String line) {
+  if (!line.startsWith("DATA,")) return;
+  String[] parts = split(line, ',');
+  if (parts.length != dataFields.length + 1) return;
+
+  float[] values = new float[dataFields.length];
+  for (int i = 0; i < dataFields.length; i++) {
+    try {
+      values[i] = Float.parseFloat(parts[i + 1]);
+    } catch (NumberFormatException e) {
+      return; // drop the whole line if any field is garbled
+    }
+  }
+
+  for (int i = 0; i < dataFields.length; i++) {
+    List<Float> list = series.get(dataFields[i]);
+    list.add(values[i]);
+    if (list.size() > maxSeriesLength) list.remove(0);
+  }
+}
+
+float latest(String field) {
+  List<Float> list = series.get(field);
+  return list.isEmpty() ? 0 : list.get(list.size() - 1);
+}
 
 // sample average over second
 void collectSample(int bpm, int rpm) {
@@ -236,11 +292,18 @@ void drawConfirmationBox() {
 
 
 
-// screen 2
+// ------ screen 2 ------
 void drawMainMenu() {
   for (int i = 0; i < menuLabels.length; i++) {
     float y = menuY + i * (menuH + menuGap);
     drawPlainBox(menuX1, y, menuX2, y + menuH, menuColors[i], menuLabels[i], 52);
+  }
+}
+
+void drawFitnessGraph(List<Integer> values) {
+  for (int i = 0; i < historyTimeframe; i++) {
+    color lineColor;
+    switch
   }
 }
 
@@ -322,7 +385,12 @@ void draw () {
      fill(0);
      background(255);
      
-     collectSample(int(random(0, 301)), int(random(0, 41)));
+     readSerial();
+     if (port != null) {
+       collectSample(round(latest("heartRate")), round(latest("respRate")));
+     } else {
+       collectSample(int(random(0, 301)), int(random(0, 41)));
+     }
      int bpm = bpms.isEmpty() ? 0 : bpms.get(bpms.size() - 1);
      int rpm = rpms.isEmpty() ? 0 : rpms.get(rpms.size() - 1);
      drawGrid();
@@ -405,5 +473,12 @@ void draw () {
          drawBox(width/2 - 175, height/2 + 200, width/2 - 50, height/2 + 250, gray, Integer.toString(rpm) + " RPM", 20);
          drawBox(width/2 - 325, height/2 + 275, width/2 - 200, height/2 + 325, gray, "Beat Interval", 20);
          drawBox(width/2 - 175, height/2 + 275, width/2 - 50, height/2 + 325, gray, "SpO2", 20);
+         
+         // Right
+         fill(255);
+         rect(width/2, 60, width/2, height-60);
+         fill(0);
+         rect(width/2 - 1, 60, 2, height-60);
+         
      }
 }
