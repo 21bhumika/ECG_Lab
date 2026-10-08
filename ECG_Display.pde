@@ -7,6 +7,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import processing.serial.*;
 
 // ----- SERIAL ------
@@ -77,6 +79,38 @@ int stressBoxW = 250, stressBoxH = 130;
 int stressBoxX = screenWidth/2 - stressBoxW/2;
 int calmBoxY = 350, elevateBoxY = 520;
 
+// screen 4 (elevating game)
+int elevateSeconds = 30;
+int elevateStartMs = 0;
+int elevateScore = 0;
+String elevatePrompt = "";
+String elevateQuestion = "";
+String[] elevateOptions = new String[4];
+int elevateAnswer = 0;
+int optW = 300, optH = 90, optGap = 30;
+int optX0 = screenWidth/2 - optW - optGap/2, optY0 = 480;
+String[] wordBank = {"HEART", "BREATH", "PULSE", "ENERGY", "FOCUS", "RHYTHM", "MUSCLE",
+                     "CARDIO", "SPRINT", "STRESS", "BRAIN", "SIGNAL", "NERVES", "OXYGEN"};
+
+// screen 5 (calming paint)
+int calmSeconds = 30;
+int calmStartMs = 0;
+PGraphics paint;
+int canvasX = 40, canvasY = 180, canvasW = 720, canvasH = 580;
+color[] paletteColors;
+int paletteIndex = 5; // black
+int paletteSize = 44, paletteGap = 16, paletteY = 135;
+int brushSize = 16;
+boolean painting = false;
+String[] calmWordBank = {"TREE", "HOUSE", "CAT", "DOG", "APPLE", "BANANA", "FLOWER", "CAR", "COMPUTER", "MOUNTAIN"};
+String drawWord = "";
+
+// screen 6 (result): vitals recorded during the activity
+List<Float> activityHr = new ArrayList<Float>();
+List<Float> activityRr = new ArrayList<Float>();
+int doneBoxW = 220, doneBoxH = 80;
+int doneBoxX = screenWidth/2 - doneBoxW/2, doneBoxY = 640;
+
 // screen 2
 int graphMode = 0; // 0 = HR, 1 = RR
 
@@ -86,7 +120,7 @@ void settings() {
 }
 
 void setup () {
-  frameRate(10);
+  frameRate(60);
   zoneColors = new color[] {gray, blue, green, yellow, orange, red};
 
   for (String f : dataFields) series.put(f, new ArrayList<Float>());
@@ -96,6 +130,9 @@ void setup () {
     port = new Serial(this, ports[serialPortIndex], 115200);
     port.clear();
   }
+
+  paletteColors = new color[] {red, orange, yellow, green, blue, black, color(255)};
+  paint = createGraphics(canvasW, canvasH);
 
   // fonts
   headerFont = createFont("AveriaSerifLibre-Regular.ttf", 32);
@@ -359,6 +396,276 @@ void drawFitnessGraph(String field, String unit, float minVal, float maxVal, flo
 
 
 
+// ----- elevating game (screen 4) -----
+void startElevating() {
+  activityHr.clear();
+  activityRr.clear();
+  elevateScore = 0;
+  elevateStartMs = millis();
+  nextQuestion();
+  currentScreen = 4;
+}
+
+// puts the correct answer at a random slot among the distractors
+void setOptions(String correct, List<String> distractors) {
+  List<String> all = new ArrayList<String>(distractors.subList(0, 3));
+  all.add(correct);
+  Collections.shuffle(all);
+  for (int i = 0; i < 4; i++) elevateOptions[i] = all.get(i);
+  elevateAnswer = all.indexOf(correct);
+}
+
+List<String> numberDistractors(int answer, int spread) {
+  LinkedHashSet<Integer> set = new LinkedHashSet<Integer>();
+  while (set.size() < 3) {
+    int d = answer + int(random(-spread, spread + 1));
+    if (d != answer) set.add(d);
+  }
+  List<String> out = new ArrayList<String>();
+  for (int d : set) out.add(str(d));
+  return out;
+}
+
+void nextQuestion() {
+  int type = int(random(3));
+
+  // math
+  if (type == 0) {
+    int a = int(random(2, 13)), b = int(random(2, 13));
+    int op = int(random(3));
+    int answer;
+    if (op == 0) { answer = a + b; elevateQuestion = a + " + " + b + " = ?"; }
+    else if (op == 1) { answer = a - b; elevateQuestion = a + " - " + b + " = ?"; }
+    else { answer = a * b; elevateQuestion = a + " x " + b + " = ?"; }
+    elevatePrompt = "Solve it";
+    setOptions(str(answer), numberDistractors(answer, 10));
+  }
+
+  // word shuffle
+  else if (type == 1) {
+    String word = wordBank[int(random(wordBank.length))];
+    String scrambled = word;
+    while (scrambled.equals(word)) {
+      List<Character> chars = new ArrayList<Character>();
+      for (char c : word.toCharArray()) chars.add(c);
+      Collections.shuffle(chars);
+      scrambled = "";
+      for (char c : chars) scrambled += c;
+    }
+    elevatePrompt = "Unscramble the word";
+    elevateQuestion = scrambled;
+    LinkedHashSet<String> others = new LinkedHashSet<String>();
+    while (others.size() < 3) {
+      String w = wordBank[int(random(wordBank.length))];
+      if (!w.equals(word)) others.add(w);
+    }
+    setOptions(word, new ArrayList<String>(others));
+  }
+
+  // pattern matching (steps)
+  else {
+    int start = int(random(1, 10));
+    int answer;
+    if (random(1) < 0.7) {
+      int step = int(random(2, 10));
+      elevateQuestion = start + ", " + (start + step) + ", " + (start + 2*step) + ", " + (start + 3*step) + ", ?";
+      answer = start + 4*step;
+    } else {
+      elevateQuestion = start + ", " + (start*2) + ", " + (start*4) + ", " + (start*8) + ", ?";
+      answer = start * 16;
+    }
+    elevatePrompt = "What comes next?";
+    setOptions(str(answer), numberDistractors(answer, 12));
+  }
+}
+
+void answerElevating(int choice) {
+  if (choice == elevateAnswer) elevateScore++;
+  nextQuestion();
+}
+
+void drawElevating() {
+  float elapsed = (millis() - elevateStartMs) / 1000.0;
+  float left = elevateSeconds - elapsed;
+  if (left <= 0) {
+    currentScreen = 6;
+    return;
+  }
+
+  // background intesify
+  float redAmt = constrain(map(elapsed, elevateSeconds * 0.5, elevateSeconds, 0, 1), 0, 1);
+  noStroke();
+  fill(255, 0, 0, redAmt * 70);
+  rect(0, 0, width, height);
+
+  drawTopBar(3, "Elevating", clockTime(), true, true, true);
+
+  // score (left) and countdown (right), under the navbar
+  textFont(mainFont);
+  textSize(30);
+  fill(black);
+  textAlign(LEFT, CENTER);
+  text("Score: " + elevateScore, 20, navHeight + 30);
+  fill(left <= 10 ? red : black);
+  textAlign(RIGHT, CENTER);
+  text(ceil(left) + "s", width - 20, navHeight + 30);
+
+  // question
+  fill(gray);
+  textFont(mainFont);
+  textSize(26);
+  textAlign(CENTER, CENTER);
+  text(elevatePrompt, width/2, 220);
+  fill(black);
+  textFont(headerFont);
+  textSize(64);
+  text(elevateQuestion, width/2, 320);
+
+  // 2x2 options
+  for (int i = 0; i < 4; i++) {
+    float x = optX0 + (i % 2) * (optW + optGap);
+    float y = optY0 + (i / 2) * (optH + optGap);
+    drawBox(x, y, x + optW, y + optH, lightGray, elevateOptions[i], 36);
+  }
+}
+
+// ----- calming paint (screen 5) -----
+void startCalming() {
+  activityHr.clear();
+  activityRr.clear();
+  paint.beginDraw();
+  paint.background(255);
+  paint.endDraw();
+  paletteIndex = 5;
+  painting = false;
+  calmStartMs = millis();
+  currentScreen = 5;
+  drawWord = calmWordBank[int(random(calmWordBank.length))];
+}
+
+float paletteX(int i) {
+  float total = paletteColors.length * paletteSize + (paletteColors.length - 1) * paletteGap;
+  return (width - total) / 2 + paletteSize / 2 + i * (paletteSize + paletteGap);
+}
+
+boolean inCanvas(float x, float y) {
+  return x > canvasX && x < canvasX + canvasW && y > canvasY && y < canvasY + canvasH;
+}
+
+void paintLine(float x1, float y1, float x2, float y2) {
+  paint.beginDraw();
+  paint.stroke(paletteColors[paletteIndex]);
+  paint.strokeWeight(brushSize);
+  paint.strokeCap(ROUND);
+  paint.line(x1 - canvasX, y1 - canvasY, x2 - canvasX, y2 - canvasY);
+  paint.endDraw();
+}
+
+void drawCalming() {
+  float left = calmSeconds - (millis() - calmStartMs) / 1000.0;
+  if (left <= 0) {
+    currentScreen = 6;
+    return;
+  }
+
+  drawTopBar(3, "Calming", clockTime(), true, true, true);
+
+  fill(black);
+  textFont(headerFont);
+  textAlign(CENTER, CENTER);
+  text("Draw a " + drawWord, width/2, navHeight + 30);
+
+  // palette
+  for (int i = 0; i < paletteColors.length; i++) {
+    stroke(black);
+    strokeWeight(i == paletteIndex ? 5 : 2);
+    fill(paletteColors[i]);
+    ellipse(paletteX(i), paletteY, paletteSize, paletteSize);
+  }
+
+  // canvas
+  image(paint, canvasX, canvasY);
+  noFill();
+  stroke(black);
+  strokeWeight(2);
+  rect(canvasX, canvasY, canvasW, canvasH);
+}
+
+// ----- result (screen 6) -----
+float avgNonZero(List<Float> v, int from, int to) {
+  float sum = 0;
+  int n = 0;
+  for (int i = max(0, from); i < min(v.size(), to); i++) {
+    if (v.get(i) > 0) { sum += v.get(i); n++; }
+  }
+  return n == 0 ? -1 : sum / n;
+}
+
+String startToEnd(List<Float> v) {
+  int edge = 20; // ~2 s of frames
+  float a = avgNonZero(v, 0, edge);
+  float b = avgNonZero(v, v.size() - edge, v.size());
+  String sa = a < 0 ? "--" : str(round(a));
+  String sb = b < 0 ? "--" : str(round(b));
+  return sa + " -> " + sb;
+}
+
+void drawResultLine(List<Float> v, float maxVal, color c) {
+  if (v.size() < 2) return;
+  float yTop = 100, yBottom = 400;
+  stroke(c);
+  strokeWeight(4);
+  noFill();
+  beginShape();
+  for (int i = 0; i < v.size(); i++) {
+    vertex(map(i, 0, v.size() - 1, 0, width), map(constrain(v.get(i), 0, maxVal), 0, maxVal, yBottom, yTop));
+  }
+  endShape();
+}
+
+void drawResult() {
+  drawTopBar(1, "Stress Mode", clockTime(), true, true, true);
+
+  float yTop = 100, yBottom = 400;
+  stroke(gray);
+  strokeWeight(2);
+  for (int i = 0; i <= 5; i++) {
+    float y = map(i, 0, 5, yTop, yBottom);
+    line(0, y, width, y);
+  }
+  stroke(black);
+  line(0, 430, width, 430);
+
+  textFont(mainFont);
+  textSize(18);
+  fill(red);
+  textAlign(LEFT, CENTER);
+  text("200 BPM", 8, navHeight + 18);
+  text("0 BPM", 8, 415);
+  fill(blue);
+  textAlign(RIGHT, CENTER);
+  text("60 RPM", width - 8, navHeight + 18);
+  text("0 RPM", width - 8, 415);
+
+  drawResultLine(activityHr, 200, red);
+  drawResultLine(activityRr, 60, blue);
+
+  // start -> end
+  textFont(mainFont);
+  textSize(28);
+  textAlign(LEFT, CENTER);
+  fill(red);
+  text("Heart Rate (BPM):", 150, 510);
+  fill(blue);
+  text("Respiratory Rate (RPM):", 150, 560);
+  fill(black);
+  textAlign(CENTER, CENTER);
+  text(startToEnd(activityHr), 600, 510);
+  text(startToEnd(activityRr), 600, 560);
+
+  drawBox(doneBoxX, doneBoxY, doneBoxX + doneBoxW, doneBoxY + doneBoxH, green, "DONE", 36);
+}
+
 void keyPressed() {
   if (currentScreen == 0) {
     if (!ageFocused) return;
@@ -370,9 +677,18 @@ void keyPressed() {
       ageText += key;  // digits only, max 3 characters
     }
   }
+  else if (currentScreen == 4 && key >= '1' && key <= '4') {
+    answerElevating(key - '1');
+  }
 }
 
+void mouseDragged() {
+  if (currentScreen == 5 && painting) paintLine(pmouseX, pmouseY, mouseX, mouseY);
+}
 
+void mouseReleased() {
+  painting = false;
+}
 
 void mousePressed() {
   if (navBackActive && mouseX > backX1 && mouseX < backX2 &&
@@ -403,8 +719,31 @@ void mousePressed() {
   }
   else if (currentScreen == 3) {
     if (mouseX > stressBoxX && mouseX < stressBoxX + stressBoxW) {
-      if (mouseY > calmBoxY && mouseY < calmBoxY + stressBoxH) currentScreen = 5;
-      else if (mouseY > elevateBoxY && mouseY < elevateBoxY + stressBoxH) currentScreen = 4;
+      if (mouseY > calmBoxY && mouseY < calmBoxY + stressBoxH) startCalming();
+      else if (mouseY > elevateBoxY && mouseY < elevateBoxY + stressBoxH) startElevating();
+    }
+  }
+  else if (currentScreen == 6) {
+    if (mouseX > doneBoxX && mouseX < doneBoxX + doneBoxW &&
+        mouseY > doneBoxY && mouseY < doneBoxY + doneBoxH) currentScreen = 1;
+  }
+  else if (currentScreen == 5) {
+    for (int i = 0; i < paletteColors.length; i++) {
+      if (dist(mouseX, mouseY, paletteX(i), paletteY) < paletteSize / 2) paletteIndex = i;
+    }
+    if (inCanvas(mouseX, mouseY)) {
+      painting = true;
+      paintLine(mouseX, mouseY, mouseX, mouseY);
+    }
+  }
+  else if (currentScreen == 4) {
+    for (int i = 0; i < 4; i++) {
+      float x = optX0 + (i % 2) * (optW + optGap);
+      float y = optY0 + (i / 2) * (optH + optGap);
+      if (mouseX > x && mouseX < x + optW && mouseY > y && mouseY < y + optH) {
+        answerElevating(i);
+        break;
+      }
     }
   }
 }
@@ -445,6 +784,10 @@ void draw () {
      fakeSerialData(); // TEMP
      int bpm = round(latest("heartRate"));
      int rpm = round(latest("respRate"));
+     if (currentScreen == 4 || currentScreen == 5) {
+       activityHr.add(latest("heartRate"));
+       activityRr.add(latest("respRate"));
+     }
      
      drawGrid();
      
@@ -555,6 +898,21 @@ void draw () {
 
          drawBox(stressBoxX, calmBoxY, stressBoxX + stressBoxW, calmBoxY + stressBoxH, blue, "Calming", 40);
          drawBox(stressBoxX, elevateBoxY, stressBoxX + stressBoxW, elevateBoxY + stressBoxH, orange, "Elevating", 40);
+         break;
+
+      // stress mode - elevating
+      case 4:
+         drawElevating();
+         break;
+
+      // stress mode - calming
+      case 5:
+         drawCalming();
+         break;
+
+      // stress mode - result
+      case 6:
+         drawResult();
          break;
      }
      lastFrameMs = millis();
