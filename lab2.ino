@@ -56,7 +56,7 @@ float heartRate = 0.0;
 
 
 // Prevent detecting the same R peak more than once
-const unsigned long ECG_REFRACTORY = 300;
+const unsigned long ECG_REFRACTORY = 500;
 
 
 // ======================================================
@@ -408,7 +408,7 @@ void processRespiration(int rawFSR,
 
 
   float threshold =
-    respirationAmplitude * 0.5;
+    respirationAmplitude * 0.8;
 
   if (threshold < 2.0)
     threshold = 2.0;
