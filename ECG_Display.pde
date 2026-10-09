@@ -15,16 +15,20 @@ import processing.serial.*;
 // DATA,time,ecgRaw,ecgFiltered,fsrRaw,fsrFiltered,heartRate,respRate,inhaleTime,exhaleTime
 String[] dataFields = {"time", "ecgRaw", "ecgFiltered", "fsrRaw", "fsrFiltered",
                        "heartRate", "respRate", "inhaleTime", "exhaleTime"};
-int serialPortIndex = 0; // index into Serial.list(), check the console output
+int serialPortIndex = 2; // index into Serial.list(), check the console output
 int maxSeriesLength = 3000; // 30 s at 100 samples/s
 Serial port;
 Map<String, List<Float>> series = new HashMap<>();
 
 // ----- CONSTS ------
-String[] screens = {"Input + Wait", "Main Page", "Fitness Mode", "Stress Mode - Menu", "Stress Mode - Elevating", "Stress Mode - Calming", "Stress Mode - Result", "Meditate Mode - Menu", "Meditate Mode - Game", "Meditate Mode - Result", "History"};
-int currentScreen = 3;
+String[] screens = {"Input + Wait", "Main Page", "Fitness Mode", "Stress Mode - Menu", "Stress Mode - Elevating", "Stress Mode - Calming", "Stress Mode - Result", "Meditate Mode", "(unused)", "(unused)", "History"};
+int currentScreen = 0;
 color[] zoneColors = new color[6];
 float[] fitnessZoneTimes = {0, 0, 0, 0, 0, 0}; // seconds in No, VL, L, M, H, VH Zones
+float[] zoneRpmTime = new float[6];     // seconds of valid breathing data per zone
+float[] zoneRpmSum = new float[6];      // time-weighted sums
+float[] zoneInhaleSum = new float[6];
+float[] zoneExhaleSum = new float[6];
 int lastFrameMs = 0;
 
 int screenWidth = 800, screenHeight = 800;
@@ -64,20 +68,22 @@ int ageBoxX = screenWidth/2 + 20, ageBoxY = screenHeight/2 - ageBoxH/2;
 int continueBoxW = 340, continueBoxH = 52;
 int continueBoxX = screenWidth/2 - continueBoxW/2, continueBoxY = 620;
 int waitSeconds = 30;
+float restingBpm = 0, restingRpm = 0;
+boolean restingDone = false;
 
 // screen 1
 // main menu buttons
 String[] menuLabels = {"Fitness", "Stress", "Meditate", "History"};
 color[] menuColors = {color(239, 188, 116), color(172, 244, 118),
                       color(130, 206, 242), color(176, 108, 238)};
-int[] menuTargets = {2, 3, 8, 10};
+int[] menuTargets = {2, 3, 7, 10};
 int menuX1 = 437, menuX2 = 760;
 int menuY = 228, menuH = 84, menuGap = 22;
 
 // screen 3
-int stressBoxW = 250, stressBoxH = 130;
+int stressBoxW = 250, stressBoxH = 100;
 int stressBoxX = screenWidth/2 - stressBoxW/2;
-int calmBoxY = 350, elevateBoxY = 520;
+int calmBoxY = 330, elevateBoxY = 460, autoBoxY = 590;
 
 // screen 4 (elevating game)
 int elevateSeconds = 30;
@@ -110,6 +116,17 @@ List<Float> activityHr = new ArrayList<Float>();
 List<Float> activityRr = new ArrayList<Float>();
 int doneBoxW = 220, doneBoxH = 80;
 int doneBoxX = screenWidth/2 - doneBoxW/2, doneBoxY = 640;
+
+// screen 7 (meditate)
+String[] ratioLabels = {"2x", "1x", "1/2x", "1/3x", "1/4x"};
+float[] ratioOptions = {2, 1, 0.5, 1.0 / 3, 0.25}; // target inhale / exhale
+int ratioChoice = 3; // default
+int fracBoxW = 80, fracBoxH = 50, fracBoxGap = 15, fracBoxY = 670;
+int fracBoxX0 = screenWidth/2 - (5 * fracBoxW + 4 * fracBoxGap) / 2;
+float ratioTolerance = 0.5;
+int graceBreaths = 3;
+int meditateBreaths = 0;
+float meditateLastExhale = 0;
 
 // screen 2
 int graphMode = 0; // 0 = HR, 1 = RR
@@ -151,6 +168,34 @@ void readSerial() {
   }
 }
 
+float lastInhale = 0, lastExhale = 0;
+float breathStartMs = -1;
+List<Float> recentBreaths = new ArrayList<Float>();
+int breathsAveraged = 4;
+float breathTimeoutMs = 20000;
+
+float computeRespRate(float timeMs, float inhale, float exhale) {
+  if (inhale != lastInhale) lastInhale = inhale;
+  if (exhale != lastExhale) {
+    lastExhale = exhale;
+    if (inhale > 0 && exhale > 0) {
+      recentBreaths.add(inhale + exhale);
+      if (recentBreaths.size() > breathsAveraged) recentBreaths.remove(0);
+    }
+    breathStartMs = timeMs;
+  }
+  if (recentBreaths.isEmpty() || breathStartMs < 0) return 0;
+
+  float sum = 0;
+  for (float b : recentBreaths) sum += b;
+  float period = sum / recentBreaths.size();
+
+  // a breath taking longer than average pulls the rate down smoothly
+  float elapsed = (timeMs - breathStartMs) / 1000.0;
+  if (elapsed * 1000 > breathTimeoutMs) return 0;
+  return 60.0 / max(period, elapsed);
+}
+
 void parseLine(String line) {
   if (!line.startsWith("DATA,")) return;
   String[] parts = split(line, ',');
@@ -165,6 +210,8 @@ void parseLine(String line) {
     }
   }
 
+  values[6] = computeRespRate(values[0], values[7], values[8]);
+
   for (int i = 0; i < dataFields.length; i++) {
     List<Float> list = series.get(dataFields[i]);
     list.add(values[i]);
@@ -172,31 +219,23 @@ void parseLine(String line) {
   }
 }
 
-// TEMP
-int fakeTimeMs = 0;
-void fakeSerialData() {
-  for (int i = 0; i < 10; i++) {
-    fakeTimeMs += 10;
-    float hr = 110 + 50 * sin(fakeTimeMs / 20000.0 * TWO_PI);
-    float rr = 18 + 6 * sin(fakeTimeMs / 30000.0 * TWO_PI);
-
-    float beatPeriod = 60000.0 / hr;
-    float phase = (fakeTimeMs % (int) beatPeriod) / beatPeriod;
-    float ecgFiltered = 120 * exp(-sq((phase - 0.1) / 0.015)) + random(-4, 4);
-    float ecgRaw = 512 + ecgFiltered;
-
-    float fsrFiltered = 60 * sin(fakeTimeMs / (60000.0 / rr) * TWO_PI);
-    float fsrRaw = 500 + fsrFiltered + random(-3, 3);
-
-    parseLine("DATA," + fakeTimeMs + "," + round(ecgRaw) + "," + nf(ecgFiltered, 0, 2) + ","
-              + round(fsrRaw) + "," + nf(fsrFiltered, 0, 2) + "," + nf(hr, 0, 1) + ","
-              + nf(rr, 0, 1) + ",1.80,2.40");
-  }
-}
-
 float latest(String field) {
   List<Float> list = series.get(field);
   return list.isEmpty() ? 0 : list.get(list.size() - 1);
+}
+
+float averageLast(String field, float seconds) {
+  List<Float> times = series.get("time");
+  List<Float> vals = series.get(field);
+  if (times.isEmpty()) return 0;
+  float cutoff = times.get(times.size() - 1) - seconds * 1000;
+  float sum = 0;
+  int n = 0;
+  for (int i = times.size() - 1; i >= 0 && times.get(i) >= cutoff; i--) {
+    sum += vals.get(i);
+    n++;
+  }
+  return n == 0 ? 0 : sum / n;
 }
 
 // draw box style
@@ -358,8 +397,58 @@ int zoneOf(float bpm) {
   return 0;
 }
 
-void drawFitnessGraph(String field, String unit, float minVal, float maxVal, float step, float yTop, float yBottom) {
-  float x1 = width/2, x2 = width;
+void resetFitnessStats() {
+  for (int z = 0; z < 6; z++) {
+    fitnessZoneTimes[z] = 0;
+    zoneRpmTime[z] = 0;
+    zoneRpmSum[z] = 0;
+    zoneInhaleSum[z] = 0;
+    zoneExhaleSum[z] = 0;
+  }
+}
+
+void drawZoneRow(String name, color c, int zone, float y) {
+  textFont(mainFont);
+  textAlign(LEFT, CENTER);
+  textSize(22);
+  fill(c);
+  text(name, 20, y);
+  fill(black);
+  text(round(fitnessZoneTimes[zone]) + "s", 150, y);
+
+  textSize(18);
+  float t = zoneRpmTime[zone];
+  if (t <= 0) {
+    text("-", 205, y);
+    text("-", 265, y);
+    text("-", 325, y);
+    return;
+  }
+  float delta = zoneRpmSum[zone] / t - restingRpm;
+  text((delta >= 0 ? "+" : "") + nf(delta, 0, 1), 205, y);
+  text(nf(zoneInhaleSum[zone] / t, 0, 1) + "s", 265, y);
+  text(nf(zoneExhaleSum[zone] / t, 0, 1) + "s", 325, y);
+}
+
+void drawFitnessGraph(String field, String name, String unit, float minVal, float maxVal, float step, float panelTop, float panelBottom) {
+  float labelW = 44;
+  float x1 = width/2 + labelW, x2 = width;
+  float yTop = panelTop + 28, yBottom = panelBottom - 14;
+
+  // sideways label box
+  stroke(black);
+  strokeWeight(2);
+  fill(gray);
+  rect(width/2, panelTop, labelW, panelBottom - panelTop);
+  fill(black);
+  textFont(mainFont);
+  textSize(24);
+  textAlign(CENTER, CENTER);
+  pushMatrix();
+  translate(width/2 + labelW/2, (panelTop + panelBottom) / 2);
+  rotate(-HALF_PI);
+  text(name, 0, 0);
+  popMatrix();
 
   // y axis
   textFont(mainFont);
@@ -371,7 +460,7 @@ void drawFitnessGraph(String field, String unit, float minVal, float maxVal, flo
     strokeWeight(2);
     line(x1, y, x2, y);
     fill(gray);
-    text(round(v) + " " + unit, x1 + 6, y - 4);
+    text(round(v) + (unit.equals("") ? "" : " " + unit), x1 + 6, y - 4);
   }
 
   List<Float> values = series.get(field);
@@ -383,8 +472,9 @@ void drawFitnessGraph(String field, String unit, float minVal, float maxVal, flo
   float windowStart = max(times.get(0), times.get(times.size() - 1) - windowMs);
 
   strokeWeight(2);
+  clip(x1, panelTop, x2 - x1, panelBottom - panelTop);
   for (int i = 1; i < values.size(); i++) {
-    if (times.get(i - 1) < windowStart) continue;
+    if (times.get(i - 1) < windowStart || times.get(i) < times.get(i - 1)) continue;
     float xa = map(times.get(i - 1), windowStart, windowStart + windowMs, x1, x2);
     float xb = map(times.get(i), windowStart, windowStart + windowMs, x1, x2);
     float ya = map(values.get(i - 1), minVal, maxVal, yBottom, yTop);
@@ -392,9 +482,31 @@ void drawFitnessGraph(String field, String unit, float minVal, float maxVal, flo
     stroke(zoneColors[zoneOf(hrs.get(i))]);
     line(xa, ya, xb, yb);
   }
+  noClip();
 }
 
 
+
+// ----- automatic mode: stressed -> calming, calm -> elevating -----
+float stressThreshold = 0.10;
+
+boolean isStressed() {
+  float bpm = averageLast("heartRate", 10);
+  float rpm = averageLast("respRate", 10);
+
+  float rise = 0;
+  int signals = 0;
+  if (bpm > 0 && restingBpm > 0) { rise += bpm / restingBpm - 1; signals++; }
+  if (rpm > 0 && restingRpm > 0) { rise += rpm / restingRpm - 1; signals++; }
+
+  if (signals == 0) return bpm > 90 || rpm > 20; // no resting baseline, use typical resting limits
+  return rise / signals > stressThreshold;
+}
+
+void startAutomatic() {
+  if (isStressed()) startCalming();
+  else startElevating();
+}
 
 // ----- elevating game (screen 4) -----
 void startElevating() {
@@ -666,6 +778,97 @@ void drawResult() {
   drawBox(doneBoxX, doneBoxY, doneBoxX + doneBoxW, doneBoxY + doneBoxH, green, "DONE", 36);
 }
 
+// ----- meditate (screen 7) -----
+void resetMeditate() {
+  meditateBreaths = 0;
+  meditateLastExhale = latest("exhaleTime");
+}
+
+void drawOrb(float cx, float cy, float d) {
+  noStroke();
+  color edge = color(130, 206, 242), core = color(205, 245, 255);
+  int steps = 24;
+  for (int i = 0; i < steps; i++) {
+    float t = i / float(steps - 1);
+    fill(lerpColor(edge, core, t));
+    ellipse(cx, cy, d * (1 - 0.75 * t), d * (1 - 0.75 * t));
+  }
+}
+
+// 0..1 chest position from the last 15 s of the filtered FSR
+float breathPosition() {
+  List<Float> times = series.get("time");
+  List<Float> vals = series.get("fsrFiltered");
+  if (times.isEmpty()) return 0.5;
+  float cutoff = times.get(times.size() - 1) - 15000;
+  float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;
+  for (int i = times.size() - 1; i >= 0 && times.get(i) >= cutoff; i--) {
+    lo = min(lo, vals.get(i));
+    hi = max(hi, vals.get(i));
+  }
+  if (hi - lo < 2) return 0.5;
+  return (vals.get(vals.size() - 1) - lo) / (hi - lo);
+}
+
+void drawMeditate() {
+  drawTopBar(1, "Meditate Mode", clockTime(), true, true, true);
+
+  float targetRatio = ratioOptions[ratioChoice];
+  float inhale = latest("inhaleTime");
+  float exhale = latest("exhaleTime");
+  boolean haveBreath = latest("respRate") > 0 && inhale > 0 && exhale > 0;
+
+  // exhaleTime changes when a breath completes
+  if (exhale != meditateLastExhale) {
+    meditateLastExhale = exhale;
+    meditateBreaths++;
+  }
+  boolean grace = meditateBreaths < graceBreaths;
+
+  fill(black);
+  textFont(headerFont);
+  textSize(40);
+  textAlign(CENTER, CENTER);
+  text("Inhale = " + ratioLabels[ratioChoice] + " your exhale", width/2, 110);
+
+  color c = gray;
+  String message = "Waiting for a breath...";
+  if (grace) {
+    message = "Settle in... " + meditateBreaths + "/" + graceBreaths;
+  }
+  else if (haveBreath) {
+    float ratio = inhale / exhale;
+    if (ratio > targetRatio * (1 + ratioTolerance)) { c = red; message = "Inhale too long"; }
+    else if (ratio < targetRatio * (1 - ratioTolerance)) { c = red; message = "Exhale too long"; }
+    else { c = green; message = "Good breathing"; }
+  }
+  drawBox(width/2 - 130, 145, width/2 + 130, 195, c, message, 26);
+
+  // circle follows your chest
+  noFill();
+  stroke(black);
+  strokeWeight(2);
+  ellipse(width/2, 380, 300, 300);
+  drawOrb(width/2, 380, lerp(60, 270, breathPosition()));
+
+  textFont(mainFont);
+  textSize(26);
+  fill(black);
+  textAlign(CENTER, CENTER);
+  if (haveBreath && !grace) {
+    text("Inhale " + nf(inhale, 0, 1) + "s   Exhale " + nf(exhale, 0, 1) + "s   (" + nf(inhale / exhale, 0, 2) + "x)", width/2, 580);
+  }
+
+  textSize(20);
+  fill(gray);
+  text("Inhale compared with exhale:", width/2, 645);
+  for (int i = 0; i < ratioOptions.length; i++) {
+    float x = fracBoxX0 + i * (fracBoxW + fracBoxGap);
+    drawBox(x, fracBoxY, x + fracBoxW, fracBoxY + fracBoxH,
+            i == ratioChoice ? green : lightGray, ratioLabels[i], 26);
+  }
+}
+
 void keyPressed() {
   if (currentScreen == 0) {
     if (!ageFocused) return;
@@ -714,6 +917,8 @@ void mousePressed() {
       float y = menuY + i * (menuH + menuGap);
       if (mouseX > menuX1 && mouseX < menuX2 && mouseY > y && mouseY < y + menuH) {
         currentScreen = menuTargets[i];
+        if (currentScreen == 2) resetFitnessStats();
+        if (currentScreen == 7) resetMeditate();
       }
     }
   }
@@ -721,6 +926,15 @@ void mousePressed() {
     if (mouseX > stressBoxX && mouseX < stressBoxX + stressBoxW) {
       if (mouseY > calmBoxY && mouseY < calmBoxY + stressBoxH) startCalming();
       else if (mouseY > elevateBoxY && mouseY < elevateBoxY + stressBoxH) startElevating();
+      else if (mouseY > autoBoxY && mouseY < autoBoxY + stressBoxH) startAutomatic();
+    }
+  }
+  else if (currentScreen == 7) {
+    for (int i = 0; i < ratioOptions.length; i++) {
+      float x = fracBoxX0 + i * (fracBoxW + fracBoxGap);
+      if (mouseX > x && mouseX < x + fracBoxW && mouseY > fracBoxY && mouseY < fracBoxY + fracBoxH) {
+        ratioChoice = i;
+      }
     }
   }
   else if (currentScreen == 6) {
@@ -777,11 +991,12 @@ void drawGrid() {
 
 
 void draw () {
+     frameRate(10);
      fill(0);
      background(255);
      
-     // if (port != null) readSerial();
-     fakeSerialData(); // TEMP
+     if (port != null) readSerial();
+     // fakeSerialData(); // TEMP
      int bpm = round(latest("heartRate"));
      int rpm = round(latest("respRate"));
      if (currentScreen == 4 || currentScreen == 5) {
@@ -807,6 +1022,19 @@ void draw () {
          text("Enter your age:", width/2 - 10, height/2);
          drawAgeBox();
          drawConfirmationBox();
+
+         if (!restingDone && secondsWaited() >= waitSeconds) {
+           restingBpm = averageLast("heartRate", waitSeconds);
+           restingRpm = averageLast("respRate", waitSeconds);
+           restingDone = true;
+         }
+         if (restingDone) {
+           fill(black);
+           textFont(mainFont);
+           textSize(24);
+           textAlign(CENTER, CENTER);
+           text("Resting: " + round(restingBpm) + " BPM, " + round(restingRpm) + " RPM", width/2, 540);
+         }
          break;
   
        // main
@@ -835,51 +1063,47 @@ void draw () {
          else if (fitnessStrain > 0.7) { fitnessZoneText = "MODERATE"; zoneColor = yellow; fitnessZone = 3; }
          else if (fitnessStrain > 0.6) { fitnessZoneText = "LIGHT"; zoneColor = green; fitnessZone = 2; }
          else if (fitnessStrain > 0.5) { fitnessZoneText = "VERY LIGHT"; zoneColor = blue; fitnessZone = 1; }
-         fitnessZoneTimes[fitnessZone] += (millis() - lastFrameMs) / 1000.0;
+         float dt = (millis() - lastFrameMs) / 1000.0;
+         fitnessZoneTimes[fitnessZone] += dt;
+         if (rpm > 0 && latest("inhaleTime") > 0 && latest("exhaleTime") > 0) {
+           zoneRpmTime[fitnessZone] += dt;
+           zoneRpmSum[fitnessZone] += dt * latest("respRate");
+           zoneInhaleSum[fitnessZone] += dt * latest("inhaleTime");
+           zoneExhaleSum[fitnessZone] += dt * latest("exhaleTime");
+         }
          
          // Left Side
          drawBox(width/2 - 300, height/2 - 275, width/2 - 100, height/2 - 200, zoneColor, fitnessZoneText, 32);
          textFont(mainFont);
          textSize(25);
          textAlign(LEFT, CENTER);
-         fill(red);
-         text("VERY HARD", width/8 + 20, height - 500);
-         fill(black);
-         text(round(fitnessZoneTimes[5]) + "s", width/8 + 150, height - 500);
-         fill(orange);
-         text("HARD", width/8 + 20, height - 460);
-         fill(black);
-         text(round(fitnessZoneTimes[4]) + "s", width/8 + 150, height - 460);
-         fill(yellow);
-         text("MODERATE", width/8 + 20, height - 420);
-         fill(black);
-         text(round(fitnessZoneTimes[3]) + "s", width/8 + 150, height - 420);
-         fill(green);
-         text("LIGHT", width/8 + 20, height - 380);
-         fill(black);
-         text(round(fitnessZoneTimes[2]) + "s", width/8 + 150, height - 380);
-         fill(blue);
-         text("VERY LIGHT", width/8 + 20, height - 340);
-         fill(black);
-         text(round(fitnessZoneTimes[1]) + "s", width/8 + 150, height - 340);
          fill(gray);
-         text("NO EFFORT", width/8 + 20, height - 300);
-         fill(black);
-         text(round(fitnessZoneTimes[0]) + "s", width/8 + 150, height - 300);
+         textSize(16);
+         text("Time", 150, height - 540);
+         text("dRPM", 205, height - 540);
+         text("In", 265, height - 540);
+         text("Ex", 325, height - 540);
+         drawZoneRow("VERY HARD", red, 5, height - 500);
+         drawZoneRow("HARD", orange, 4, height - 460);
+         drawZoneRow("MODERATE", yellow, 3, height - 420);
+         drawZoneRow("LIGHT", green, 2, height - 380);
+         drawZoneRow("VERY LIGHT", blue, 1, height - 340);
+         drawZoneRow("NO EFFORT", gray, 0, height - 300);
          
          drawBox(width/2 - 325, height/2 + 200, width/2 - 200, height/2 + 250, gray, Integer.toString(bpm) + " BPM", 20);
          drawBox(width/2 - 175, height/2 + 200, width/2 - 50, height/2 + 250, gray, Integer.toString(rpm) + " RPM", 20);
-         drawBox(width/2 - 325, height/2 + 275, width/2 - 200, height/2 + 325, gray, "Beat Interval", 20);
-         drawBox(width/2 - 175, height/2 + 275, width/2 - 50, height/2 + 325, gray, "SpO2", 20);
+         drawBox(width/2 - 325, height/2 + 270, width/2 - 200, height/2 + 320, gray, "Rest " + round(restingBpm) + " BPM", 20);
+         drawBox(width/2 - 175, height/2 + 270, width/2 - 50, height/2 + 320, gray, "Rest " + round(restingRpm) + " RPM", 20);
          
          // Right
          fill(255);
          rect(width/2, 60, width/2, height-60);
          fill(0);
          rect(width/2 - 1, 60, 2, height-60);
-         rect(width/2 - 1, 430, width-2, 2);
-         drawFitnessGraph("heartRate", "BPM", 0, 220, 40, 80, 420);
-         drawFitnessGraph("respRate", "RPM", 0, 45, 10, 450, 780);
+         float panelH = (height - navHeight) / 2.0;
+         rect(width/2 - 1, navHeight + panelH - 1, width/2, 2);
+         drawFitnessGraph("heartRate", "BPM", "BPM", 0, 200, 50, navHeight, navHeight + panelH);
+         drawFitnessGraph("respRate", "RPM", "RPM", 0, 45, 15, navHeight + panelH, height);
          break;
      
       // stress mode menu
@@ -898,6 +1122,7 @@ void draw () {
 
          drawBox(stressBoxX, calmBoxY, stressBoxX + stressBoxW, calmBoxY + stressBoxH, blue, "Calming", 40);
          drawBox(stressBoxX, elevateBoxY, stressBoxX + stressBoxW, elevateBoxY + stressBoxH, orange, "Elevating", 40);
+         drawBox(stressBoxX, autoBoxY, stressBoxX + stressBoxW, autoBoxY + stressBoxH, green, "Automatic", 40);
          break;
 
       // stress mode - elevating
@@ -908,6 +1133,11 @@ void draw () {
       // stress mode - calming
       case 5:
          drawCalming();
+         break;
+
+      // meditate mode
+      case 7:
+         drawMeditate();
          break;
 
       // stress mode - result

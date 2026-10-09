@@ -32,8 +32,8 @@ const int LO_MINUS_PIN = 11;
 // SAMPLING
 // ======================================================
 
-// 100 samples per second
-const unsigned long SAMPLE_PERIOD = 10;
+// 10 samples per second
+const unsigned long SAMPLE_PERIOD = 100;
 
 unsigned long lastSampleTime = 0;
 
@@ -81,6 +81,10 @@ const bool FSR_INCREASES_ON_INHALE = true;
 // 0 = waiting / negative respiratory phase
 // 1 = positive respiratory phase
 int respirationState = 0;
+
+// Extremes of the respiration signal within the current phase
+float respirationPeak = 0.0;
+float respirationValley = 0.0;
 
 unsigned long inhaleStart = 0;
 unsigned long exhaleStart = 0;
@@ -165,33 +169,19 @@ void loop() {
     // SEND DATA TO PROCESSING
     // ------------------------------------------
 
-    Serial.print("DATA,");
+    char ecgF[12], fsrF[12], hr[10], rr[10], inh[10], exh[10], line[96];
 
-    Serial.print(now);
-    Serial.print(",");
+    dtostrf(ecgFiltered, 1, 2, ecgF);
+    dtostrf(fsrFiltered, 1, 2, fsrF);
+    dtostrf(heartRate, 1, 1, hr);
+    dtostrf(respiratoryRate, 1, 1, rr);
+    dtostrf(inhaleTime, 1, 2, inh);
+    dtostrf(exhaleTime, 1, 2, exh);
 
-    Serial.print(ecgRaw);
-    Serial.print(",");
+    snprintf(line, sizeof(line), "DATA,%lu,%d,%s,%d,%s,%s,%s,%s,%s\n",
+             now, ecgRaw, ecgF, fsrRaw, fsrF, hr, rr, inh, exh);
 
-    Serial.print(ecgFiltered, 2);
-    Serial.print(",");
-
-    Serial.print(fsrRaw);
-    Serial.print(",");
-
-    Serial.print(fsrFiltered, 2);
-    Serial.print(",");
-
-    Serial.print(heartRate, 1);
-    Serial.print(",");
-
-    Serial.print(respiratoryRate, 1);
-    Serial.print(",");
-
-    Serial.print(inhaleTime, 2);
-    Serial.print(",");
-
-    Serial.println(exhaleTime, 2);
+    Serial.write((const uint8_t *)line, strlen(line));
   }
 }
 
@@ -418,10 +408,17 @@ void processRespiration(int rawFSR,
   // INHALATION START
   // ====================================================
 
+  if (respirationState == 0) {
+    respirationValley = min(respirationValley, respirationSignal);
+  } else {
+    respirationPeak = max(respirationPeak, respirationSignal);
+  }
+
   if (respirationState == 0 &&
-      respirationSignal > threshold) {
+      respirationSignal > respirationValley + threshold) {
 
     respirationState = 1;
+    respirationPeak = respirationSignal;
 
     inhaleStart = now;
 
@@ -483,9 +480,10 @@ void processRespiration(int rawFSR,
   // ====================================================
 
   if (respirationState == 1 &&
-      respirationSignal < -threshold) {
+      respirationSignal < respirationPeak - threshold) {
 
     respirationState = 0;
+    respirationValley = respirationSignal;
 
     exhaleStart = now;
 
