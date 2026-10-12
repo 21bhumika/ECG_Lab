@@ -74,10 +74,10 @@ boolean restingDone = false;
 
 // screen 1
 // main menu buttons
-String[] menuLabels = {"Fitness", "Stress", "Meditate", "History"};
+String[] menuLabels = {"Fitness", "Stress", "Meditate"};
 color[] menuColors = {color(239, 188, 116), color(172, 244, 118),
-                      color(130, 206, 242), color(176, 108, 238)};
-int[] menuTargets = {2, 3, 7, 10};
+                      color(130, 206, 242)};
+int[] menuTargets = {2, 3, 7};
 int menuX1 = 437, menuX2 = 760;
 int menuY = 228, menuH = 84, menuGap = 22;
 
