@@ -301,9 +301,7 @@ String[] wordBank = {
 int calmSeconds = 30;
 
 int calmStartMs = 0;
-
 SoundFile calmMusic;
-
 PGraphics paint;
 
 int canvasX = 40;
@@ -525,53 +523,19 @@ void setup() {
     port.clear();
   }
 
+  paletteColors = new color[] {red, orange, yellow, green, blue, black, color(255)};
+  paint = createGraphics(canvasW, canvasH);
 
-  paletteColors =
-    new color[] {
+  // fonts
+  headerFont = createFont("AveriaSerifLibre-Regular.ttf", 32);
+  mainFont  = createFont("ShareTech-Regular.ttf", 20);
 
-      red,
-      orange,
-      yellow,
-      green,
-      blue,
-      black,
-      color(255)
-    };
-
-
-  paint =
-    createGraphics(
-      canvasW,
-      canvasH
-    );
-
-
-  headerFont =
-    createFont(
-      "AveriaSerifLibre-Regular.ttf",
-      32
-    );
-
-
-  mainFont =
-    createFont(
-      "ShareTech-Regular.ttf",
-      20
-    );
-
-
-  calmMusic =
-    new SoundFile(
-      this,
-      "Calming relaxing music 30 seconds.mp3"
-    );
+  calmMusic = new SoundFile(this, "Calming relaxing music 30 seconds.mp3");
 }
 
 
-// ======================================================
-// SERIAL READING
-// ======================================================
 
+// read every complete line waiting on the port
 void readSerial() {
 
   if (
@@ -2825,15 +2789,8 @@ void startCalming() {
   paletteIndex = 5;
 
   painting = false;
-
-
-  calmStartMs =
-    millis();
-
-
+  calmStartMs = millis();
   calmMusic.play();
-
-
   currentScreen = 5;
 
 
@@ -5636,1012 +5593,143 @@ void drawGrid() {
 // DRAW
 // ======================================================
 
-void draw() {
-
-
-  frameRate(10);
-
-
-  if (
-
-    currentScreen != 5
-
-    &&
-
-    calmMusic.isPlaying()
-
-    ) {
-
-
-    calmMusic.stop();
-  }
-
-
-  fill(0);
-
-  background(255);
-
-
-  if (
-    port != null
-    ) {
-
-
-    readSerial();
-  }
-
-
-  int bpm =
-    round(
-      latest(
-        "heartRate"
-      )
-    );
-
-
-  int rpm =
-    round(
-      latest(
-        "respRate"
-      )
-    );
-
-
-  if (
-
-    currentScreen == 4
-
-    ||
-
-    currentScreen == 5
-
-    ) {
-
-
-    activityHr.add(
-
-      latest(
-        "heartRate"
-      )
-    );
-
-
-    activityRr.add(
-
-      latest(
-        "respRate"
-      )
-    );
-  }
-
-
-  drawGrid();
-
-
-  switch(
-    currentScreen
-    ) {
-
-
-    // ==================================================
-    // SCREEN 0
-    // ==================================================
-
-    case 0:
-
-
-      textFont(
-        headerFont
-      );
-
-
-      textSize(60);
-
-
-      textAlign(
-        CENTER,
-        CENTER
-      );
-
-
-      text(
-
-        "Mind Times",
-
-        width/2,
-
-        200
-      );
-
-
-      textFont(
-        mainFont
-      );
-
-
-      textSize(30);
-
-
-      textAlign(
-        RIGHT,
-        CENTER
-      );
-
-
-      text(
-
-        "Enter your age:",
-
-        width/2 - 10,
-
-        height/2
-      );
-
-
-      drawAgeBox();
-
-
-      drawConfirmationBox();
-
-
-      if (
-
-        !restingDone
-
-        &&
-
-        secondsWaited()
-        >=
-        waitSeconds
-
-        ) {
-
-
-        restingBpm =
-
-          averageLast(
-
-            "heartRate",
-
-            waitSeconds
-          );
-
-
-        restingRpm =
-
-          averageLast(
-
-            "respRate",
-
-            waitSeconds
-          );
-
-
-        restingDone =
-          true;
-      }
-
-
-      if (
-        restingDone
-        ) {
-
-
-        fill(black);
-
-
-        textFont(
-          mainFont
-        );
-
-
-        textSize(24);
-
-
-        textAlign(
-          CENTER,
-          CENTER
-        );
-
-
-        text(
-
-          "Resting: "
-          +
-          round(
-            restingBpm
-          )
-          +
-          " BPM, "
-          +
-          round(
-            restingRpm
-          )
-          +
-          " RPM",
-
-          width/2,
-
-          540
-        );
-      }
-
-
-      break;
-
-
-    // ==================================================
-    // MAIN
-    // ==================================================
-
-    case 1:
-
-
-      drawTopBar(
-
-        0,
-
-        "",
-
-        clockTime(),
-
-        false,
-
-        false,
-
-        true
-      );
-
-
-      fill(black);
-
-
-      textFont(
-        headerFont
-      );
-
-
-      textSize(60);
-
-
-      textAlign(
-        CENTER,
-        CENTER
-      );
-
-
-      text(
-
-        "Mind Time",
-
-        width/4,
-
-        height/2
-      );
-
-
-      drawMainMenu();
-
-
-      break;
-
-
-    // ==================================================
-    // FITNESS
-    // ==================================================
-
-    case 2:
-
-
-      drawTopBar(
-
-        1,
-
-        "Fitness Mode",
-
-        clockTime(),
-
-        true,
-
-        true,
-
-        true
-      );
-
-
-      float fitnessStrain =
-
-        bpm
-        /
-        float(
-          220 -
-          age
-        );
-
-
-      String fitnessZoneText =
-        "NO EFFORT";
-
-
-      color zoneColor =
-        gray;
-
-
-      int fitnessZone = 0;
-
-
-      if (
-        fitnessStrain > 0.9
-        ) {
-
-
-        fitnessZoneText =
-          "VERY HARD";
-
-
-        zoneColor =
-          red;
-
-
-        fitnessZone = 5;
-      }
-
-
-      else if (
-        fitnessStrain > 0.8
-        ) {
-
-
-        fitnessZoneText =
-          "HARD";
-
-
-        zoneColor =
-          orange;
-
-
-        fitnessZone = 4;
-      }
-
-
-      else if (
-        fitnessStrain > 0.7
-        ) {
-
-
-        fitnessZoneText =
-          "MODERATE";
-
-
-        zoneColor =
-          yellow;
-
-
-        fitnessZone = 3;
-      }
-
-
-      else if (
-        fitnessStrain > 0.6
-        ) {
-
-
-        fitnessZoneText =
-          "LIGHT";
-
-
-        zoneColor =
-          green;
-
-
-        fitnessZone = 2;
-      }
-
-
-      else if (
-        fitnessStrain > 0.5
-        ) {
-
-
-        fitnessZoneText =
-          "VERY LIGHT";
-
-
-        zoneColor =
-          blue;
-
-
-        fitnessZone = 1;
-      }
-
-
-      float dt =
-
-        (
-          millis()
-          -
-          lastFrameMs
-        )
-
-        /
-
-        1000.0;
-
-
-      fitnessZoneTimes[
-        fitnessZone
-      ]
-      +=
-      dt;
-
-
-      if (
-
-        rpm > 0
-
-        &&
-
-        latest(
-          "inhaleTime"
-        )
-        > 0
-
-        &&
-
-        latest(
-          "exhaleTime"
-        )
-        > 0
-
-        ) {
-
-
-        zoneRpmTime[
-          fitnessZone
-        ]
-        +=
-        dt;
-
-
-        zoneRpmSum[
-          fitnessZone
-        ]
-        +=
-        dt
-        *
-        latest(
-          "respRate"
-        );
-
-
-        zoneInhaleSum[
-          fitnessZone
-        ]
-        +=
-        dt
-        *
-        latest(
-          "inhaleTime"
-        );
-
-
-        zoneExhaleSum[
-          fitnessZone
-        ]
-        +=
-        dt
-        *
-        latest(
-          "exhaleTime"
-        );
-      }
-
-
-      drawBox(
-
-        width/2 - 300,
-
-        height/2 - 275,
-
-        width/2 - 100,
-
-        height/2 - 200,
-
-        zoneColor,
-
-        fitnessZoneText,
-
-        32
-      );
-
-
-      textFont(
-        mainFont
-      );
-
-
-      textSize(25);
-
-
-      textAlign(
-        LEFT,
-        CENTER
-      );
-
-
-      fill(gray);
-
-
-      textSize(16);
-
-
-      text(
-        "Time",
-        150,
-        height - 540
-      );
-
-
-      text(
-        "dRPM",
-        205,
-        height - 540
-      );
-
-
-      text(
-        "In",
-        265,
-        height - 540
-      );
-
-
-      text(
-        "Ex",
-        325,
-        height - 540
-      );
-
-
-      drawZoneRow(
-
-        "VERY HARD",
-
-        red,
-
-        5,
-
-        height - 500
-      );
-
-
-      drawZoneRow(
-
-        "HARD",
-
-        orange,
-
-        4,
-
-        height - 460
-      );
-
-
-      drawZoneRow(
-
-        "MODERATE",
-
-        yellow,
-
-        3,
-
-        height - 420
-      );
-
-
-      drawZoneRow(
-
-        "LIGHT",
-
-        green,
-
-        2,
-
-        height - 380
-      );
-
-
-      drawZoneRow(
-
-        "VERY LIGHT",
-
-        blue,
-
-        1,
-
-        height - 340
-      );
-
-
-      drawZoneRow(
-
-        "NO EFFORT",
-
-        gray,
-
-        0,
-
-        height - 300
-      );
-
-
-      drawBox(
-
-        width/2 - 325,
-
-        height/2 + 200,
-
-        width/2 - 200,
-
-        height/2 + 250,
-
-        gray,
-
-        Integer.toString(
-          bpm
-        )
-        +
-        " BPM",
-
-        20
-      );
-
-
-      drawBox(
-
-        width/2 - 175,
-
-        height/2 + 200,
-
-        width/2 - 50,
-
-        height/2 + 250,
-
-        gray,
-
-        Integer.toString(
-          rpm
-        )
-        +
-        " RPM",
-
-        20
-      );
-
-
-      drawBox(
-
-        width/2 - 325,
-
-        height/2 + 270,
-
-        width/2 - 200,
-
-        height/2 + 320,
-
-        gray,
-
-        "Rest "
-        +
-        round(
-          restingBpm
-        )
-        +
-        " BPM",
-
-        20
-      );
-
-
-      drawBox(
-
-        width/2 - 175,
-
-        height/2 + 270,
-
-        width/2 - 50,
-
-        height/2 + 320,
-
-        gray,
-
-        "Rest "
-        +
-        round(
-          restingRpm
-        )
-        +
-        " RPM",
-
-        20
-      );
-
-
-      fill(255);
-
-
-      rect(
-
-        width/2,
-
-        60,
-
-        width/2,
-
-        height - 60
-      );
-
-
-      fill(0);
-
-
-      rect(
-
-        width/2 - 1,
-
-        60,
-
-        2,
-
-        height - 60
-      );
-
-
-      float panelH =
-
-        (
-          height -
-          navHeight
-        )
-        /
-        3.0;
-
-
-      rect(
-
-        width/2 - 1,
-
-        navHeight +
-        panelH - 1,
-
-        width/2,
-
-        2
-      );
-
-
-      rect(
-
-        width/2 - 1,
-
-        navHeight +
-        panelH*2 - 1,
-
-        width/2,
-
-        2
-      );
-
-
-      drawFitnessGraph(
-
-        "ecgFiltered",
-
-        "ECG",
-
-        "",
-
-        -200,
-
-        200,
-
-        200,
-
-        navHeight,
-
-        navHeight +
-        panelH
-      );
-
-
-      drawFitnessGraph(
-
-        "heartRate",
-
-        "BPM",
-
-        "BPM",
-
-        0,
-
-        200,
-
-        100,
-
-        navHeight +
-        panelH,
-
-        navHeight +
-        panelH*2
-      );
-
-
-      drawFitnessGraph(
-
-        "respRate",
-
-        "RPM",
-
-        "RPM",
-
-        0,
-
-        45,
-
-        15,
-
-        navHeight +
-        panelH*2,
-
-        height
-      );
-
-
-      break;
-
-
-    // ==================================================
-    // STRESS MENU
-    // ==================================================
-
-    case 3:
-
-
-      drawTopBar(
-
-        1,
-
-        "Stress Mode",
-
-        clockTime(),
-
-        true,
-
-        true,
-
-        true
-      );
-
-
-      fill(black);
-
-
-      textFont(
-        headerFont
-      );
-
-
-      textSize(55);
-
-
-      textAlign(
-        CENTER,
-        CENTER
-      );
-
-
-      text(
-
-        "Test your stress! Select",
-
-        width/2,
-
-        170
-      );
-
-
-      text(
-
-        "a mode:",
-
-        width/2,
-
-        250
-      );
-
-
-      textFont(
-        mainFont
-      );
-
-
-      textSize(20);
-
-
-      fill(gray);
-
-
-      text(
-
-        "Activity takes ~30 seconds",
-
-        width/2,
-
-        750
-      );
-
-
-      drawBox(
-
-        stressBoxX,
-
-        calmBoxY,
-
-        stressBoxX +
-        stressBoxW,
-
-        calmBoxY +
-        stressBoxH,
-
-        blue,
-
-        "Calming",
-
-        40
-      );
-
-
-      drawBox(
-
-        stressBoxX,
-
-        elevateBoxY,
-
-        stressBoxX +
-        stressBoxW,
-
-        elevateBoxY +
-        stressBoxH,
-
-        orange,
-
-        "Elevating",
-
-        40
-      );
-
-
-      drawBox(
-
-        stressBoxX,
-
-        autoBoxY,
-
-        stressBoxX +
-        stressBoxW,
-
-        autoBoxY +
-        stressBoxH,
-
-        green,
-
-        "Automatic",
-
-        40
-      );
-
-
-      break;
+void draw () {
+     frameRate(10);
+     if (currentScreen != 5 && calmMusic.isPlaying()) calmMusic.stop();
+     fill(0);
+     background(255);
+     
+     if (port != null) readSerial();
+     // fakeSerialData(); // TEMP
+     int bpm = round(latest("heartRate"));
+     int rpm = round(latest("respRate"));
+     if (currentScreen == 4 || currentScreen == 5) {
+       activityHr.add(latest("heartRate"));
+       activityRr.add(latest("respRate"));
+     }
+     
+     drawGrid();
+     
+     switch(currentScreen) {
+       // input
+       case 0:
+         // title
+         textFont(headerFont);
+         textSize(60);
+         textAlign(CENTER, CENTER);
+         text("Mind Times", width/2, 200);
+         
+         // textbox
+         textFont(mainFont);
+         textSize(30);
+         textAlign(RIGHT, CENTER);
+         text("Enter your age:", width/2 - 10, height/2);
+         drawAgeBox();
+         drawConfirmationBox();
+
+         if (!restingDone && secondsWaited() >= waitSeconds) {
+           restingBpm = averageLast("heartRate", waitSeconds);
+           restingRpm = averageLast("respRate", waitSeconds);
+           restingDone = true;
+         }
+         if (restingDone) {
+           fill(black);
+           textFont(mainFont);
+           textSize(24);
+           textAlign(CENTER, CENTER);
+           text("Resting: " + round(restingBpm) + " BPM, " + round(restingRpm) + " RPM", width/2, 540);
+         }
+         break;
+  
+       // main
+       case 1:
+         drawTopBar(0, "", clockTime(), false, false, true);
+         fill(black);
+         textFont(headerFont);
+         textSize(60);
+         textAlign(CENTER, CENTER);
+         text("Mind Time", width/4, height/2);
+         
+         drawMainMenu();
+         break;
+         
+       // fitness mode
+       case 2:
+         drawTopBar(1, "Fitness Mode", clockTime(), true, true, true);
+         
+         
+         float fitnessStrain = bpm / float(220 - age);
+         String fitnessZoneText = "NO EFFORT";
+         color zoneColor = gray;
+         int fitnessZone = 0;
+         if (fitnessStrain > 0.9) { fitnessZoneText = "VERY HARD"; zoneColor = red; fitnessZone = 5; }
+         else if (fitnessStrain > 0.8) { fitnessZoneText = "HARD"; zoneColor = orange; fitnessZone = 4; }
+         else if (fitnessStrain > 0.7) { fitnessZoneText = "MODERATE"; zoneColor = yellow; fitnessZone = 3; }
+         else if (fitnessStrain > 0.6) { fitnessZoneText = "LIGHT"; zoneColor = green; fitnessZone = 2; }
+         else if (fitnessStrain > 0.5) { fitnessZoneText = "VERY LIGHT"; zoneColor = blue; fitnessZone = 1; }
+         float dt = (millis() - lastFrameMs) / 1000.0;
+         fitnessZoneTimes[fitnessZone] += dt;
+         if (rpm > 0 && latest("inhaleTime") > 0 && latest("exhaleTime") > 0) {
+           zoneRpmTime[fitnessZone] += dt;
+           zoneRpmSum[fitnessZone] += dt * latest("respRate");
+           zoneInhaleSum[fitnessZone] += dt * latest("inhaleTime");
+           zoneExhaleSum[fitnessZone] += dt * latest("exhaleTime");
+         }
+         
+         // Left Side
+         drawBox(width/2 - 300, height/2 - 275, width/2 - 100, height/2 - 200, zoneColor, fitnessZoneText, 32);
+         textFont(mainFont);
+         textSize(25);
+         textAlign(LEFT, CENTER);
+         fill(gray);
+         textSize(16);
+         text("Time", 150, height - 540);
+         text("dRPM", 205, height - 540);
+         text("In", 265, height - 540);
+         text("Ex", 325, height - 540);
+         drawZoneRow("VERY HARD", red, 5, height - 500);
+         drawZoneRow("HARD", orange, 4, height - 460);
+         drawZoneRow("MODERATE", yellow, 3, height - 420);
+         drawZoneRow("LIGHT", green, 2, height - 380);
+         drawZoneRow("VERY LIGHT", blue, 1, height - 340);
+         drawZoneRow("NO EFFORT", gray, 0, height - 300);
+         
+         drawBox(width/2 - 325, height/2 + 200, width/2 - 200, height/2 + 250, gray, Integer.toString(bpm) + " BPM", 20);
+         drawBox(width/2 - 175, height/2 + 200, width/2 - 50, height/2 + 250, gray, Integer.toString(rpm) + " RPM", 20);
+         drawBox(width/2 - 325, height/2 + 270, width/2 - 200, height/2 + 320, gray, "Rest " + round(restingBpm) + " BPM", 20);
+         drawBox(width/2 - 175, height/2 + 270, width/2 - 50, height/2 + 320, gray, "Rest " + round(restingRpm) + " RPM", 20);
+         
+         // Right
+         fill(255);
+         rect(width/2, 60, width/2, height-60);
+         fill(0);
+         rect(width/2 - 1, 60, 2, height-60);
+         float panelH = (height - navHeight) / 3.0;
+         rect(width/2 - 1, navHeight + panelH - 1, width/2, 2);
+         rect(width/2 - 1, navHeight + panelH * 2 - 1, width/2, 2);
+         drawFitnessGraph("ecgFiltered", "ECG", "", -200, 200, 200, navHeight, navHeight + panelH);
+         drawFitnessGraph("heartRate", "BPM", "BPM", 0, 200, 100, navHeight + panelH, navHeight + panelH * 2);
+         drawFitnessGraph("respRate", "RPM", "RPM", 0, 45, 15, navHeight + panelH * 2, height);
+         break;
+     
+      // stress mode menu
+      case 3:
+         drawTopBar(1, "Stress Mode", clockTime(), true, true, true);
+         fill(black);
+         textFont(headerFont);
+         textSize(55);
+         textAlign(CENTER, CENTER);
+         text("Test your stress! Select", width/2, 170);
+         text("a mode:", width/2, 250);
+         textFont(mainFont);
+         textSize(20);
+         fill(gray);
+         text("Activity takes ~30 seconds", width/2, 750);
+
+         drawBox(stressBoxX, calmBoxY, stressBoxX + stressBoxW, calmBoxY + stressBoxH, blue, "Calming", 40);
+         drawBox(stressBoxX, elevateBoxY, stressBoxX + stressBoxW, elevateBoxY + stressBoxH, orange, "Elevating", 40);
+         drawBox(stressBoxX, autoBoxY, stressBoxX + stressBoxW, autoBoxY + stressBoxH, green, "Automatic", 40);
+         break;
 
 
     // ==================================================
