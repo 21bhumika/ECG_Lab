@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import processing.serial.*;
+import processing.sound.*;
 
 // ----- SERIAL ------
 // DATA,time,ecgRaw,ecgFiltered,fsrRaw,fsrFiltered,heartRate,respRate,inhaleTime,exhaleTime
@@ -101,6 +102,7 @@ String[] wordBank = {"HEART", "BREATH", "PULSE", "ENERGY", "FOCUS", "RHYTHM", "M
 // screen 5 (calming paint)
 int calmSeconds = 30;
 int calmStartMs = 0;
+SoundFile calmMusic;
 PGraphics paint;
 int canvasX = 40, canvasY = 180, canvasW = 720, canvasH = 580;
 color[] paletteColors;
@@ -154,6 +156,8 @@ void setup () {
   // fonts
   headerFont = createFont("AveriaSerifLibre-Regular.ttf", 32);
   mainFont  = createFont("ShareTech-Regular.ttf", 20);
+
+  calmMusic = new SoundFile(this, "Calming relaxing music 30 seconds.mp3");
 }
 
 
@@ -651,6 +655,7 @@ void startCalming() {
   paletteIndex = 5;
   painting = false;
   calmStartMs = millis();
+  calmMusic.play();
   currentScreen = 5;
   drawWord = calmWordBank[int(random(calmWordBank.length))];
 }
@@ -992,6 +997,7 @@ void drawGrid() {
 
 void draw () {
      frameRate(10);
+     if (currentScreen != 5 && calmMusic.isPlaying()) calmMusic.stop();
      fill(0);
      background(255);
      
@@ -1100,10 +1106,12 @@ void draw () {
          rect(width/2, 60, width/2, height-60);
          fill(0);
          rect(width/2 - 1, 60, 2, height-60);
-         float panelH = (height - navHeight) / 2.0;
+         float panelH = (height - navHeight) / 3.0;
          rect(width/2 - 1, navHeight + panelH - 1, width/2, 2);
-         drawFitnessGraph("heartRate", "BPM", "BPM", 0, 200, 50, navHeight, navHeight + panelH);
-         drawFitnessGraph("respRate", "RPM", "RPM", 0, 45, 15, navHeight + panelH, height);
+         rect(width/2 - 1, navHeight + panelH * 2 - 1, width/2, 2);
+         drawFitnessGraph("ecgFiltered", "ECG", "", -200, 200, 200, navHeight, navHeight + panelH);
+         drawFitnessGraph("heartRate", "BPM", "BPM", 0, 200, 100, navHeight + panelH, navHeight + panelH * 2);
+         drawFitnessGraph("respRate", "RPM", "RPM", 0, 45, 15, navHeight + panelH * 2, height);
          break;
      
       // stress mode menu
